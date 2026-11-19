@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { loadPersisted, savePersisted, type PersistedData } from './localPersistence'
+import { DEFAULT_PERSISTED, loadPersisted, savePersisted, type PersistedData } from './localPersistence'
 
 export type SaveStatus = 'saved' | 'pending' | 'unavailable'
 
@@ -17,7 +17,7 @@ export function useLocalPersistence() {
     try {
       return loadPersisted(window.localStorage)
     } catch {
-      return { text: '', mode: 'on' }
+      return DEFAULT_PERSISTED
     }
   })
   const [status, setStatus] = useState<SaveStatus>('saved')

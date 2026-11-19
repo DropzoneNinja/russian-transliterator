@@ -14,6 +14,15 @@ import {
 
 export type { EditSnapshot, HistoryGroup }
 
+/**
+ * A genuinely ambiguous pending sequence (e.g. "y", which could still
+ * extend to "ya"/"yo"/"yu") legitimately has to wait for more input to
+ * know what it resolves to. But if nothing else arrives — the user typed
+ * it as the last character and stopped — it must not hang forever
+ * (ISSUES.md: "Y does not work"). Auto-flush it after a short idle pause.
+ */
+const AUTO_FLUSH_IDLE_MS = 500
+
 export interface UseTransliterationEditorOptions {
   readonly mode: TransliterationMode
   readonly initial: EditSnapshot
@@ -65,6 +74,7 @@ export function useTransliterationEditor(
   const lastKnownValueRef = useRef(options.initial.text)
   const isComposingRef = useRef(false)
   const compositionSnapshotRef = useRef<EditSnapshot | null>(null)
+  const autoFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const commitMutation = useCallback((snapshot: EditSnapshot, group: HistoryGroup) => {
     lastKnownValueRef.current = snapshot.text
@@ -72,8 +82,16 @@ export function useTransliterationEditor(
     onTextChangeRef.current(snapshot.text)
   }, [])
 
+  const clearAutoFlushTimer = useCallback((): void => {
+    if (autoFlushTimerRef.current !== null) {
+      clearTimeout(autoFlushTimerRef.current)
+      autoFlushTimerRef.current = null
+    }
+  }, [])
+
   /** Resolve the pending buffer into the DOM, adjusting any out-of-region selection for the length change. */
   const flushPendingIntoDom = useCallback((): void => {
+    clearAutoFlushTimer()
     const ta = textareaRef.current
     const pendingRaw = engineRef.current.pendingRaw
     if (ta === null || pendingRaw === '') return
@@ -97,7 +115,17 @@ export function useTransliterationEditor(
     pendingAnchorRef.current = newSelEnd
 
     commitMutation({ text: newValue, selectionStart: newSelStart, selectionEnd: newSelEnd }, 'insert')
-  }, [commitMutation])
+  }, [clearAutoFlushTimer, commitMutation])
+
+  /** Schedule (or cancel) an idle auto-flush of whatever is currently pending. */
+  const scheduleAutoFlush = useCallback((): void => {
+    clearAutoFlushTimer()
+    if (engineRef.current.pendingRaw === '') return
+    autoFlushTimerRef.current = setTimeout(() => {
+      autoFlushTimerRef.current = null
+      flushPendingIntoDom()
+    }, AUTO_FLUSH_IDLE_MS)
+  }, [clearAutoFlushTimer, flushPendingIntoDom])
 
   /** Flush if the caret/selection is no longer exactly where the pending span ends (a flush trigger). */
   const ensurePendingConsistency = useCallback(
@@ -152,8 +180,9 @@ export function useTransliterationEditor(
       pendingAnchorRef.current = newCaret
 
       commitMutation({ text: newValue, selectionStart: newCaret, selectionEnd: newCaret }, group)
+      scheduleAutoFlush()
     },
-    [commitMutation, ensurePendingConsistency],
+    [commitMutation, ensurePendingConsistency, scheduleAutoFlush],
   )
 
   const performDelete = useCallback(
@@ -178,6 +207,7 @@ export function useTransliterationEditor(
         engineRef.current = { pendingRaw: newPendingRaw }
         pendingAnchorRef.current = newCaret
         commitMutation({ text: newValue, selectionStart: newCaret, selectionEnd: newCaret }, 'delete')
+        scheduleAutoFlush()
         return
       }
 
@@ -237,20 +267,24 @@ export function useTransliterationEditor(
 
       commitMutation({ text: newValue, selectionStart: delStart, selectionEnd: delStart }, 'delete')
     },
-    [commitMutation, flushPendingIntoDom],
+    [commitMutation, flushPendingIntoDom, scheduleAutoFlush],
   )
 
-  const applyExternalChange = useCallback((snapshot: EditSnapshot): void => {
-    const ta = textareaRef.current
-    if (ta === null) return
-    ta.value = snapshot.text
-    ta.setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd)
-    ta.focus()
-    engineRef.current = INITIAL_STATE
-    pendingAnchorRef.current = snapshot.selectionEnd
-    lastKnownValueRef.current = snapshot.text
-    onTextChangeRef.current(snapshot.text)
-  }, [])
+  const applyExternalChange = useCallback(
+    (snapshot: EditSnapshot): void => {
+      const ta = textareaRef.current
+      if (ta === null) return
+      clearAutoFlushTimer()
+      ta.value = snapshot.text
+      ta.setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd)
+      ta.focus()
+      engineRef.current = INITIAL_STATE
+      pendingAnchorRef.current = snapshot.selectionEnd
+      lastKnownValueRef.current = snapshot.text
+      onTextChangeRef.current(snapshot.text)
+    },
+    [clearAutoFlushTimer],
+  )
 
   const flushPending = useCallback((): void => {
     flushPendingIntoDom()
@@ -283,6 +317,14 @@ export function useTransliterationEditor(
 
       if (event.inputType === 'insertText') {
         performInsert(start, end, event.data ?? '', 'insert', false)
+        return
+      }
+
+      if (event.inputType === 'insertLineBreak' || event.inputType === 'insertParagraph') {
+        // Enter in a <textarea> fires insertLineBreak with `data: null` —
+        // the newline itself is implicit, not carried in `event.data`
+        // (ISSUES.md: "allow return/enter").
+        performInsert(start, end, '\n', 'insert', true)
         return
       }
 
@@ -333,6 +375,7 @@ export function useTransliterationEditor(
       ta!.setSelectionRange(newCaret, newCaret)
       engineRef.current = INITIAL_STATE
       pendingAnchorRef.current = newCaret
+      clearAutoFlushTimer()
 
       commitMutation({ text: newValue, selectionStart: newCaret, selectionEnd: newCaret }, 'other')
     }
@@ -361,6 +404,7 @@ export function useTransliterationEditor(
       ta!.setSelectionRange(newCaret, newCaret)
       engineRef.current = INITIAL_STATE
       pendingAnchorRef.current = newCaret
+      clearAutoFlushTimer()
 
       commitMutation({ text: newValue, selectionStart: newCaret, selectionEnd: newCaret }, 'other')
     }
@@ -397,8 +441,16 @@ export function useTransliterationEditor(
       ta.removeEventListener('paste', handlePaste)
       ta.removeEventListener('blur', handleBlur)
       document.removeEventListener('selectionchange', handleSelectionChange)
+      clearAutoFlushTimer()
     }
-  }, [commitMutation, ensurePendingConsistency, flushPendingIntoDom, performDelete, performInsert])
+  }, [
+    clearAutoFlushTimer,
+    commitMutation,
+    ensurePendingConsistency,
+    flushPendingIntoDom,
+    performDelete,
+    performInsert,
+  ])
 
   return { textareaRef, applyExternalChange, flushPending }
 }

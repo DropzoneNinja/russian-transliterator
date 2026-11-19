@@ -263,6 +263,19 @@ page out from under someone mid-sentence.
 - [ ] **P10-2** Walk through all 16 acceptance criteria in §13 individually and record pass/fail.
 - [ ] **P10-3** Final end-to-end run-through of the documented deploy workflow on a clean checkout.
 
+### Phase 11 — Word completion/prediction (added post-launch, beyond PROJECT.md's original scope)
+
+Requested directly by the user after the original 10 phases above were
+complete. Not covered by PROJECT.md; tracked here for consistency.
+
+- [x] **P11-1** Curated common-Russian-word list (`src/prediction/wordlist.ts`), bundled at build time — no runtime dictionary fetch, keeping the PWA's zero-external-request requirement (§7, §10.4) intact.
+- [x] **P11-2** Pure `suggestCompletions(prefix, limit)` (`src/prediction/suggest.ts`): case-insensitive prefix match, ranked by the word list's order, re-cased to match the prefix's capitalization.
+- [x] **P11-3** `useWordSuggestions` hook: tracks the Cyrillic word run immediately before the caret, independent of `useTransliterationEditor`'s internals; proposes a replacement snapshot on accept rather than mutating the DOM itself, so acceptance flows through the same history/persistence pipeline as every other edit.
+- [x] **P11-4** `SuggestionBar` component: a row of clickable word chips above the editor, rendering nothing when there are no suggestions.
+- [x] **P11-5** `PredictionToggle` in the Toolbar ("Suggestions: On/Off"), persisted alongside mode/text (persistence schema bumped to v2, with a v1-data migration defaulting the new field to on).
+- [x] **P11-6** Tab accepts the top suggestion when one is showing; suggestions are suppressed in Roman (OFF) mode and while the toggle is off.
+- [x] **P11-7** Tests: prefix matching/case/ranking (pure), and end-to-end accept-via-click, accept-via-Tab, minimum-prefix gating, toggle-off hides immediately, Roman mode hides suggestions, persisted preference restore.
+
 ---
 
 ## 3. Known spec nuance (documented per §5.5's "choose a consistent, user-friendly behaviour")

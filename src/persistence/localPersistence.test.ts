@@ -20,10 +20,10 @@ describe('loadPersisted', () => {
     expect(loadPersisted(makeMemoryStorage())).toEqual(DEFAULT_PERSISTED)
   })
 
-  it('round-trips text and mode through save then load', () => {
+  it('round-trips text, mode, and predictionEnabled through save then load', () => {
     const storage = makeMemoryStorage()
-    savePersisted({ text: 'привет', mode: 'off' }, storage)
-    expect(loadPersisted(storage)).toEqual({ text: 'привет', mode: 'off' })
+    savePersisted({ text: 'привет', mode: 'off', predictionEnabled: false }, storage)
+    expect(loadPersisted(storage)).toEqual({ text: 'привет', mode: 'off', predictionEnabled: false })
   })
 
   it('treats corrupt JSON as the default rather than throwing', () => {
@@ -33,6 +33,18 @@ describe('loadPersisted', () => {
   })
 
   it('treats an unrecognized schema version as the default', () => {
+    const storage = makeMemoryStorage()
+    storage.setItem(STORAGE_KEY, JSON.stringify({ v: 99, text: 'x', mode: 'on' }))
+    expect(loadPersisted(storage)).toEqual(DEFAULT_PERSISTED)
+  })
+
+  it('migrates v1 data (no predictionEnabled field) by defaulting it to on', () => {
+    const storage = makeMemoryStorage()
+    storage.setItem(STORAGE_KEY, JSON.stringify({ v: 1, text: 'привет', mode: 'on', savedAt: 0 }))
+    expect(loadPersisted(storage)).toEqual({ text: 'привет', mode: 'on', predictionEnabled: true })
+  })
+
+  it('treats a v2 payload missing predictionEnabled as the default', () => {
     const storage = makeMemoryStorage()
     storage.setItem(STORAGE_KEY, JSON.stringify({ v: 2, text: 'x', mode: 'on' }))
     expect(loadPersisted(storage)).toEqual(DEFAULT_PERSISTED)
@@ -61,13 +73,13 @@ describe('savePersisted', () => {
   })
 
   it('returns true on a successful write', () => {
-    expect(savePersisted({ text: 'a', mode: 'on' }, storage)).toBe(true)
+    expect(savePersisted({ text: 'a', mode: 'on', predictionEnabled: true }, storage)).toBe(true)
   })
 
   it('returns false instead of throwing when the backend rejects the write (e.g. quota)', () => {
     vi.spyOn(storage, 'setItem').mockImplementation(() => {
       throw new Error('QuotaExceededError')
     })
-    expect(savePersisted({ text: 'a', mode: 'on' }, storage)).toBe(false)
+    expect(savePersisted({ text: 'a', mode: 'on', predictionEnabled: true }, storage)).toBe(false)
   })
 })

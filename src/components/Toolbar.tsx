@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ModeToggle } from './ModeToggle'
+import { PredictionToggle } from './PredictionToggle'
 import type { TransliterationMode } from '../transliteration/transliterate'
 
 interface ToolbarProps {
   mode: TransliterationMode
   onToggleMode: () => void
+  predictionEnabled: boolean
+  onTogglePrediction: () => void
   onCopy: () => Promise<boolean>
   onClear: () => void
   onUndo: () => void
@@ -28,6 +31,8 @@ const FEEDBACK_MS = 2000
 export function Toolbar({
   mode,
   onToggleMode,
+  predictionEnabled,
+  onTogglePrediction,
   onCopy,
   onClear,
   onUndo,
@@ -94,6 +99,7 @@ export function Toolbar({
         Redo
       </button>
       <ModeToggle mode={mode} onToggle={onToggleMode} />
+      <PredictionToggle enabled={predictionEnabled} onToggle={onTogglePrediction} />
       <button type="button" title="Download" aria-label="Download" onClick={onDownload} className={BUTTON_CLASS}>
         Download
       </button>

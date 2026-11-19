@@ -221,7 +221,7 @@ describe('App: toolbar', () => {
 
 describe('App: persistence restore', () => {
   it('restores previously saved text and mode on mount', () => {
-    savePersisted({ text: 'привет', mode: 'off' }, window.localStorage)
+    savePersisted({ text: 'привет', mode: 'off', predictionEnabled: true }, window.localStorage)
     render(<App />)
     expect(getEditor().value).toBe('привет')
     expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'false')
@@ -231,5 +231,137 @@ describe('App: persistence restore', () => {
     render(<App />)
     expect(getEditor().value).toBe('')
     expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'true')
+  })
+})
+
+describe('App: word suggestions', () => {
+  it('suggests a completion once enough of a word is typed, and clicking it accepts the completion', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(getEditor())
+    await user.keyboard('priv')
+    expect(getEditor().value).toBe('прив')
+
+    const suggestion = await screen.findByRole('button', { name: 'Insert "привет"' })
+    await user.click(suggestion)
+    expect(getEditor().value).toBe('привет ')
+  })
+
+  it('Tab accepts the top suggestion', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(getEditor())
+    await user.keyboard('priv')
+    await screen.findByRole('button', { name: 'Insert "привет"' })
+
+    await user.keyboard('{Tab}')
+    expect(getEditor().value).toBe('привет ')
+  })
+
+  it('does not show a suggestion until the minimum prefix length is reached', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(getEditor())
+    await user.keyboard('p')
+    expect(getEditor().value).toBe('п')
+    expect(screen.queryByRole('button', { name: /^Insert "/ })).not.toBeInTheDocument()
+  })
+
+  it('turning the Suggestions toggle off hides suggestions immediately', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(getEditor())
+    await user.keyboard('priv')
+    await screen.findByRole('button', { name: 'Insert "привет"' })
+
+    await user.click(screen.getByRole('button', { name: 'Suggestions: On' }))
+    expect(screen.queryByRole('button', { name: 'Insert "привет"' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Suggestions: Off' })).toBeInTheDocument()
+  })
+
+  it('switching to Roman mode hides suggestions', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(getEditor())
+    await user.keyboard('priv')
+    await screen.findByRole('button', { name: 'Insert "привет"' })
+
+    await user.click(screen.getByRole('switch'))
+    expect(screen.queryByRole('button', { name: 'Insert "привет"' })).not.toBeInTheDocument()
+  })
+
+  it('restores a previously saved predictionEnabled=false preference', async () => {
+    savePersisted({ text: '', mode: 'on', predictionEnabled: false }, window.localStorage)
+    const user = userEvent.setup()
+    render(<App />)
+    expect(screen.getByRole('button', { name: 'Suggestions: Off' })).toBeInTheDocument()
+
+    await user.click(getEditor())
+    await user.keyboard('priv')
+    expect(screen.queryByRole('button', { name: /^Insert "/ })).not.toBeInTheDocument()
+  })
+})
+
+describe('App: ISSUES.md fixes', () => {
+  it('a lone apostrophe resolves to "ь" immediately, with nothing further typed', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(getEditor())
+    await user.keyboard("'")
+    expect(getEditor().value).toBe('ь')
+  })
+
+  it('a lone "#" resolves to "ъ" immediately', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(getEditor())
+    await user.keyboard('#')
+    expect(getEditor().value).toBe('ъ')
+  })
+
+  it('a lone "y" resolves to "ы" after a brief idle pause, instead of hanging forever', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(getEditor())
+    await user.keyboard('y')
+    expect(getEditor().value).toBe('y') // still genuinely ambiguous with ya/yo/yu right after the keystroke
+
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    expect(getEditor().value).toBe('ы')
+  })
+
+  it('toggling Cyrillic|Roman keeps keyboard focus on the editor', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(getEditor())
+    await user.click(screen.getByRole('switch'))
+    expect(getEditor()).toHaveFocus()
+  })
+
+  it('Enter inserts a newline (multiline support)', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(getEditor())
+    await user.keyboard('privet{Enter}mir')
+    expect(getEditor().value).toBe('привет\nмир')
+  })
+
+  it('clicking a reference letter inserts it at the caret', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(getEditor())
+    await user.keyboard('мир')
+
+    const middle = getEditor().value.indexOf('и')
+    getEditor().setSelectionRange(middle, middle)
+    await user.click(screen.getByRole('button', { name: 'Insert Cyrillic letter "ж"' }))
+    expect(getEditor().value).toBe('мжир')
+    expect(getEditor()).toHaveFocus()
+  })
+
+  it('labels the toggle with the Russian names for the two scripts', () => {
+    render(<App />)
+    expect(screen.getByText('Кириллица')).toBeInTheDocument()
+    expect(screen.getByText('Латиница')).toBeInTheDocument()
   })
 })

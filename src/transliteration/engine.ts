@@ -40,6 +40,21 @@ function hasLongerExtension(candidateLower: string): boolean {
 }
 
 /**
+ * True if every key that extends `candidateLower` maps to the exact same
+ * Cyrillic result as `candidateLower` itself (e.g. `'` -> ь and its only
+ * extension `''` -> ь too). When that holds, waiting for more input can
+ * never change the outcome, so there is no reason to buffer — ISSUE.md
+ * "Single quote ' does not work": it was buffering indefinitely waiting
+ * to see if a second `'` followed, even though the answer is ь either way.
+ */
+function allLongerExtensionsMatch(candidateLower: string, ownResult: string): boolean {
+  return ALL_KEYS.every((key) => {
+    if (key.length <= candidateLower.length || !key.startsWith(candidateLower)) return true
+    return EXACT_MATCH.get(key) === ownResult
+  })
+}
+
+/**
  * Case rule (PROJECT.md §5.3, resolved in TASKS.md §1.3 point 5): the
  * output is uppercase exactly when the first character of the matched
  * input sequence is uppercase. A single rule covers both "Zh" -> "Ж"
@@ -62,13 +77,13 @@ function step(pendingRaw: string, char: string): StepOutcome {
   const candidate = pendingRaw + char
   const candidateLower = candidate.toLowerCase()
 
-  if (hasLongerExtension(candidateLower)) {
-    return { kind: 'buffer', pendingRaw: candidate }
+  const exact = EXACT_MATCH.get(candidateLower)
+  if (exact !== undefined && (!hasLongerExtension(candidateLower) || allLongerExtensionsMatch(candidateLower, exact))) {
+    return { kind: 'commit', committed: applyCase(candidate, exact) }
   }
 
-  const exact = EXACT_MATCH.get(candidateLower)
-  if (exact !== undefined) {
-    return { kind: 'commit', committed: applyCase(candidate, exact) }
+  if (hasLongerExtension(candidateLower)) {
+    return { kind: 'buffer', pendingRaw: candidate }
   }
 
   return { kind: 'mismatch' }

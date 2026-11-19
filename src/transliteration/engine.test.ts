@@ -65,6 +65,23 @@ describe('engine: partial sequences while typing (PROJECT.md §5.4)', () => {
   })
 })
 
+describe('engine: single-key aliases whose only extension matches (ISSUES.md)', () => {
+  it('commits "\'" to "ь" immediately, without buffering for a possible second "\'"', () => {
+    const { steps } = feedAll(["'"])
+    expect(steps[0]).toEqual({ committed: 'ь', pendingRaw: '' })
+  })
+
+  it('commits "#" to "ъ" immediately, without buffering for a possible second "#"', () => {
+    const { steps } = feedAll(['#'])
+    expect(steps[0]).toEqual({ committed: 'ъ', pendingRaw: '' })
+  })
+
+  it('still buffers "t" and "m", whose longer extensions ("tvz"/"mjz") map to a different result', () => {
+    expect(feedAll(['t']).steps[0]).toEqual({ committed: '', pendingRaw: 't' })
+    expect(feedAll(['m']).steps[0]).toEqual({ committed: '', pendingRaw: 'm' })
+  })
+})
+
 describe('engine: separator (PROJECT.md §5.5)', () => {
   it('"raj+on" avoids "jo" -> "ё" and produces "район"', () => {
     const result = feed(INITIAL_STATE, 'raj+on')

@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AppHeader } from '../components/AppHeader'
 import { TransliterationReference } from '../components/TransliterationReference'
 import { Toolbar } from '../components/Toolbar'
+import { SuggestionBar } from '../components/SuggestionBar'
 import { Editor } from '../components/Editor'
 import { StatusBar } from '../components/StatusBar'
 import { useTransliterationEditor, type EditSnapshot, type HistoryGroup } from '../editor/useTransliterationEditor'
 import { useEditorHistory } from '../history/useEditorHistory'
 import { useLocalPersistence } from '../persistence/useLocalPersistence'
+import { useWordSuggestions } from '../prediction/useWordSuggestions'
 import { copyToClipboard } from '../utils/clipboard'
 import { downloadTextFile } from '../utils/download'
 import type { TransliterationMode } from '../transliteration/transliterate'
@@ -14,6 +16,7 @@ import type { TransliterationMode } from '../transliteration/transliterate'
 export function App() {
   const persistence = useLocalPersistence()
   const [mode, setMode] = useState<TransliterationMode>(persistence.initial.mode)
+  const [predictionEnabled, setPredictionEnabled] = useState<boolean>(persistence.initial.predictionEnabled)
   const [text, setText] = useState<string>(persistence.initial.text)
 
   const initialSnapshot = useMemo<EditSnapshot>(() => {
@@ -34,13 +37,33 @@ export function App() {
   const editor = useTransliterationEditor({ mode, initial: initialSnapshot, onMutate, onTextChange })
 
   useEffect(() => {
-    persistence.save({ text, mode })
-  }, [text, mode, persistence])
+    persistence.save({ text, mode, predictionEnabled })
+  }, [text, mode, predictionEnabled, persistence])
 
   const handleToggleMode = useCallback(() => {
     editor.flushPending()
     setMode((current) => (current === 'on' ? 'off' : 'on'))
+    editor.textareaRef.current?.focus() // clicking the toolbar button would otherwise steal focus (ISSUES.md)
   }, [editor])
+
+  const handleTogglePrediction = useCallback(() => {
+    setPredictionEnabled((current) => !current)
+  }, [])
+
+  const handleAcceptSuggestion = useCallback(
+    (snapshot: EditSnapshot) => {
+      history.push(snapshot, 'other')
+      editor.applyExternalChange(snapshot)
+    },
+    [editor, history],
+  )
+
+  const suggestions = useWordSuggestions({
+    textareaRef: editor.textareaRef,
+    enabled: predictionEnabled && mode === 'on',
+    text,
+    onAccept: handleAcceptSuggestion,
+  })
 
   const handleUndo = useCallback(() => {
     const snapshot = history.undo()
@@ -63,6 +86,22 @@ export function App() {
 
   const handleCopy = useCallback(() => copyToClipboard(text), [text])
   const handleDownload = useCallback(() => downloadTextFile(text), [text])
+
+  const handleInsertReferenceChar = useCallback(
+    (char: string) => {
+      editor.flushPending() // existing Cyrillic is itself a flush trigger (TASKS.md §1.3 point 3)
+      const ta = editor.textareaRef.current
+      if (ta === null) return
+      const start = ta.selectionStart
+      const end = ta.selectionEnd
+      const newText = ta.value.slice(0, start) + char + ta.value.slice(end)
+      const newCaret = start + char.length
+      const snapshot: EditSnapshot = { text: newText, selectionStart: newCaret, selectionEnd: newCaret }
+      history.push(snapshot, 'other')
+      editor.applyExternalChange(snapshot)
+    },
+    [editor, history],
+  )
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
@@ -94,10 +133,12 @@ export function App() {
   return (
     <div className="flex h-dvh min-h-0 flex-col bg-(--color-bg)">
       <AppHeader />
-      <TransliterationReference />
+      <TransliterationReference onSelect={handleInsertReferenceChar} />
       <Toolbar
         mode={mode}
         onToggleMode={handleToggleMode}
+        predictionEnabled={predictionEnabled}
+        onTogglePrediction={handleTogglePrediction}
         onCopy={handleCopy}
         onClear={handleClear}
         onUndo={handleUndo}
@@ -107,6 +148,7 @@ export function App() {
         canRedo={history.canRedo}
         hasText={text !== ''}
       />
+      <SuggestionBar suggestions={suggestions.suggestions} onSelect={suggestions.accept} />
       <main className="flex min-h-0 flex-1 flex-col">
         <Editor textareaRef={editor.textareaRef} />
       </main>
