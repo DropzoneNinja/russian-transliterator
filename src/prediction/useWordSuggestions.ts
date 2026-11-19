@@ -27,12 +27,19 @@ export interface UseWordSuggestionsOptions {
    * textarea at recompute time.
    */
   readonly text: string
-  /** Called with the snapshot to apply when a suggestion is accepted (via click or Tab). */
+  /** Called with the snapshot to apply when a suggestion is accepted (via click, Tab, or Space). */
   readonly onAccept: (snapshot: EditSnapshot) => void
 }
 
 export interface WordSuggestionsHandle {
   readonly suggestions: readonly string[]
+  /**
+   * The remainder of the top suggestion past what's already typed, for
+   * rendering as inline ghost text — only ever non-empty when the caret
+   * is at the very end of the text (showing it mid-document would visually
+   * collide with real characters already sitting right after the caret).
+   */
+  readonly ghostSuffix: string
   readonly accept: (word: string) => void
 }
 
@@ -50,23 +57,27 @@ export function useWordSuggestions(options: UseWordSuggestionsOptions): WordSugg
   const onAcceptRef = useRef(options.onAccept)
   const rangeRef = useRef<WordRange | null>(null)
   const suggestionsRef = useRef<readonly string[]>([])
+  const ghostSuffixRef = useRef('')
   const [suggestions, setSuggestions] = useState<readonly string[]>([])
+  const [ghostSuffix, setGhostSuffix] = useState('')
 
   useEffect(() => {
     enabledRef.current = options.enabled
     onAcceptRef.current = options.onAccept
   }, [options.enabled, options.onAccept])
 
-  const applySuggestions = useCallback((next: readonly string[], range: WordRange | null) => {
+  const applyResult = useCallback((next: readonly string[], range: WordRange | null, ghost: string) => {
     rangeRef.current = range
     suggestionsRef.current = next
+    ghostSuffixRef.current = ghost
     setSuggestions(next)
+    setGhostSuffix(ghost)
   }, [])
 
   const recompute = useCallback((): void => {
     const ta = textareaRef.current
     if (ta === null || !enabledRef.current || ta.selectionStart !== ta.selectionEnd) {
-      applySuggestions([], null)
+      applyResult([], null, '')
       return
     }
 
@@ -77,13 +88,15 @@ export function useWordSuggestions(options: UseWordSuggestionsOptions): WordSugg
     const prefix = value.slice(start, caret)
 
     if (prefix.length < MIN_PREFIX_LENGTH) {
-      applySuggestions([], null)
+      applyResult([], null, '')
       return
     }
 
     const matches = suggestCompletions(prefix, MAX_SUGGESTIONS)
-    applySuggestions(matches, matches.length > 0 ? { start, end: caret } : null)
-  }, [applySuggestions, textareaRef])
+    const top = matches[0]
+    const ghost = top !== undefined && caret === value.length ? top.slice(prefix.length) : ''
+    applyResult(matches, matches.length > 0 ? { start, end: caret } : null, ghost)
+  }, [applyResult, textareaRef])
 
   const accept = useCallback(
     (word: string): void => {
@@ -97,10 +110,10 @@ export function useWordSuggestions(options: UseWordSuggestionsOptions): WordSugg
       const newText = before + insertion + after
       const newCaret = before.length + insertion.length
 
-      applySuggestions([], null)
+      applyResult([], null, '')
       onAcceptRef.current({ text: newText, selectionStart: newCaret, selectionEnd: newCaret })
     },
-    [applySuggestions, textareaRef],
+    [applyResult, textareaRef],
   )
 
   // Primary recompute trigger: the editor's text changed (covers typing,
@@ -123,11 +136,21 @@ export function useWordSuggestions(options: UseWordSuggestionsOptions): WordSugg
     }
 
     function handleKeyDown(event: KeyboardEvent): void {
-      if (event.key !== 'Tab' || event.shiftKey) return
       const top = suggestionsRef.current[0]
       if (top === undefined) return
-      event.preventDefault()
-      accept(top)
+
+      if (event.key === 'Tab' && !event.shiftKey) {
+        event.preventDefault()
+        accept(top)
+        return
+      }
+
+      // Space accepts the completion currently shown as ghost text — if
+      // nothing is showing, a space is just a space.
+      if (event.key === ' ' && ghostSuffixRef.current !== '') {
+        event.preventDefault()
+        accept(top)
+      }
     }
 
     document.addEventListener('selectionchange', handleSelectionChange)
@@ -139,5 +162,5 @@ export function useWordSuggestions(options: UseWordSuggestionsOptions): WordSugg
     }
   }, [accept, recompute, textareaRef])
 
-  return { suggestions, accept }
+  return { suggestions, ghostSuffix, accept }
 }

@@ -16,6 +16,8 @@ interface ToolbarProps {
   canUndo: boolean
   canRedo: boolean
   hasText: boolean
+  suggestions: readonly string[]
+  onSelectSuggestion: (word: string) => void
 }
 
 const BUTTON_CLASS =
@@ -41,6 +43,8 @@ export function Toolbar({
   canUndo,
   canRedo,
   hasText,
+  suggestions,
+  onSelectSuggestion,
 }: ToolbarProps) {
   const [feedback, setFeedback] = useState<string | null>(null)
   const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -106,6 +110,24 @@ export function Toolbar({
       <span role="status" aria-live="polite" className="text-xs text-(--color-text-muted)">
         {feedback}
       </span>
+      {suggestions.length > 0 && (
+        <>
+          <div aria-hidden="true" className="min-w-2 flex-1" />
+          <div aria-label="Word suggestions" className="flex flex-wrap items-center gap-1.5">
+            {suggestions.map((word) => (
+              <button
+                key={word}
+                type="button"
+                aria-label={`Insert "${word}"`}
+                onClick={() => onSelectSuggestion(word)}
+                className="shrink-0 rounded-full border border-(--color-border) bg-(--color-key-bg) px-3 py-1 text-sm text-(--color-key-text) hover:bg-(--color-surface-muted) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-focus-ring)"
+              >
+                {word}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   )
 }

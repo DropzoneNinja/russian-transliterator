@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AppHeader } from '../components/AppHeader'
 import { TransliterationReference } from '../components/TransliterationReference'
 import { Toolbar } from '../components/Toolbar'
-import { SuggestionBar } from '../components/SuggestionBar'
 import { Editor } from '../components/Editor'
 import { StatusBar } from '../components/StatusBar'
 import { useTransliterationEditor, type EditSnapshot, type HistoryGroup } from '../editor/useTransliterationEditor'
@@ -147,10 +146,11 @@ export function App() {
         canUndo={history.canUndo}
         canRedo={history.canRedo}
         hasText={text !== ''}
+        suggestions={suggestions.suggestions}
+        onSelectSuggestion={suggestions.accept}
       />
-      <SuggestionBar suggestions={suggestions.suggestions} onSelect={suggestions.accept} />
       <main className="flex min-h-0 flex-1 flex-col">
-        <Editor textareaRef={editor.textareaRef} />
+        <Editor textareaRef={editor.textareaRef} text={text} ghostSuffix={suggestions.ghostSuffix} />
       </main>
       <StatusBar text={text} saveStatus={persistence.status} />
     </div>

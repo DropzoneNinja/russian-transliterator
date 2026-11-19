@@ -271,10 +271,18 @@ complete. Not covered by PROJECT.md; tracked here for consistency.
 - [x] **P11-1** Curated common-Russian-word list (`src/prediction/wordlist.ts`), bundled at build time — no runtime dictionary fetch, keeping the PWA's zero-external-request requirement (§7, §10.4) intact.
 - [x] **P11-2** Pure `suggestCompletions(prefix, limit)` (`src/prediction/suggest.ts`): case-insensitive prefix match, ranked by the word list's order, re-cased to match the prefix's capitalization.
 - [x] **P11-3** `useWordSuggestions` hook: tracks the Cyrillic word run immediately before the caret, independent of `useTransliterationEditor`'s internals; proposes a replacement snapshot on accept rather than mutating the DOM itself, so acceptance flows through the same history/persistence pipeline as every other edit.
-- [x] **P11-4** `SuggestionBar` component: a row of clickable word chips above the editor, rendering nothing when there are no suggestions.
+- [x] **P11-4** ~~`SuggestionBar` component: a row of clickable word chips above the editor~~ — superseded by Phase 12 (moved into the toolbar).
 - [x] **P11-5** `PredictionToggle` in the Toolbar ("Suggestions: On/Off"), persisted alongside mode/text (persistence schema bumped to v2, with a v1-data migration defaulting the new field to on).
 - [x] **P11-6** Tab accepts the top suggestion when one is showing; suggestions are suppressed in Roman (OFF) mode and while the toggle is off.
 - [x] **P11-7** Tests: prefix matching/case/ranking (pure), and end-to-end accept-via-click, accept-via-Tab, minimum-prefix gating, toggle-off hides immediately, Roman mode hides suggestions, persisted preference restore.
+
+### Phase 12 — Prediction UX redesign & instant "y" (user feedback round 2)
+
+- [x] **P12-1** Moved suggestion chips out of their own row above the editor and into the Toolbar, after a flex spacer, following Download.
+- [x] **P12-2** Inline "ghost text" completion: a decorative backdrop div sits behind a transparent-background textarea, mirroring the real text invisibly plus the top suggestion's remaining letters in muted grey — only when the caret is at the very end of the document (anywhere else would visually collide with real trailing text). Scroll position synced between the two layers.
+- [x] **P12-3** Space accepts the completion currently shown as ghost text (same insertion path as Tab/click); a plain space when nothing is showing.
+- [x] **P12-4** Instant "y" → "ы": rather than buffering "y" while it waits to see if "ya"/"yo"/"yu" follows, it commits immediately — in `useTransliterationEditor`, not the pure engine, since it needs wall-clock timing. If "u"/"o"/"a" arrives at the same spot within 2s, it's retroactively merged into "ю"/"ё"/"я"; after 2s (or anywhere else), it's independent. Applies whether "y" was typed fresh or arrived right after an unrelated flush (e.g. "ty").
+- [x] **P12-5** Tests: ghost text appears/updates/disappears correctly, Space-accept vs. plain space, chips render inside the toolbar region, instant-y / retroactive-merge / 2s-expiry / post-flush cases.
 
 ---
 

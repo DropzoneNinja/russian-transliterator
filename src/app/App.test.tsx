@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
@@ -6,6 +6,10 @@ import { savePersisted } from '../persistence/localPersistence'
 
 function getEditor(): HTMLTextAreaElement {
   return screen.getByRole('textbox', { name: 'Editor' }) as HTMLTextAreaElement
+}
+
+function getGhostSuffix(): string {
+  return screen.getByTestId('ghost-suffix').textContent ?? ''
 }
 
 beforeEach(() => {
@@ -300,6 +304,66 @@ describe('App: word suggestions', () => {
     await user.keyboard('priv')
     expect(screen.queryByRole('button', { name: /^Insert "/ })).not.toBeInTheDocument()
   })
+
+  it('renders suggestion chips inside the toolbar, after Download', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(getEditor())
+    await user.keyboard('priv')
+    const chip = await screen.findByRole('button', { name: 'Insert "привет"' })
+    expect(screen.getByRole('toolbar')).toContainElement(chip)
+  })
+
+  it('shows the top suggestion as inline ghost text when the caret is at the end', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(getEditor())
+    await user.keyboard('priv')
+    expect(getGhostSuffix()).toBe('ет')
+  })
+
+  it('updates the ghost text as more letters are typed', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(getEditor())
+    await user.keyboard('priv')
+    expect(getGhostSuffix()).toBe('ет')
+    await user.keyboard('e')
+    expect(getEditor().value).toBe('приве')
+    expect(getGhostSuffix()).toBe('т')
+  })
+
+  it('does not show ghost text when the caret is not at the end of the document', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    const editor = getEditor()
+    await user.click(editor)
+    await user.keyboard('privet mir')
+    expect(editor.value).toBe('привет мир')
+
+    editor.setSelectionRange(4, 4)
+    fireEvent(document, new Event('selectionchange'))
+    await screen.findByRole('button', { name: 'Insert "привет"' }) // chips still work mid-document
+    expect(getGhostSuffix()).toBe('')
+  })
+
+  it('pressing Space accepts the ghost completion', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(getEditor())
+    await user.keyboard('priv')
+    expect(getGhostSuffix()).toBe('ет')
+    await user.keyboard(' ')
+    expect(getEditor().value).toBe('привет ')
+  })
+
+  it('Space is a normal space when no ghost text is showing', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(getEditor())
+    await user.keyboard('mir ')
+    expect(getEditor().value).toBe('мир ')
+  })
 })
 
 describe('App: ISSUES.md fixes', () => {
@@ -319,15 +383,44 @@ describe('App: ISSUES.md fixes', () => {
     expect(getEditor().value).toBe('ъ')
   })
 
-  it('a lone "y" resolves to "ы" after a brief idle pause, instead of hanging forever', async () => {
+  it('a lone "y" resolves to "ы" instantly, with nothing further typed', async () => {
     const user = userEvent.setup()
     render(<App />)
     await user.click(getEditor())
     await user.keyboard('y')
-    expect(getEditor().value).toBe('y') // still genuinely ambiguous with ya/yo/yu right after the keystroke
-
-    await new Promise((resolve) => setTimeout(resolve, 600))
     expect(getEditor().value).toBe('ы')
+  })
+
+  it('"u"/"o"/"a" right after a "y" shortcut retroactively merges into "ю"/"ё"/"я"', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(getEditor())
+    await user.keyboard('y')
+    expect(getEditor().value).toBe('ы')
+    await user.keyboard('a')
+    expect(getEditor().value).toBe('я')
+  })
+
+  it('"u"/"o"/"a" arriving 2+ seconds after a "y" shortcut is treated as a separate character', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(getEditor())
+    await user.keyboard('y')
+    expect(getEditor().value).toBe('ы')
+
+    await new Promise((resolve) => setTimeout(resolve, 2100))
+    await user.keyboard('a')
+    expect(getEditor().value).toBe('ыа')
+  })
+
+  it('typing "ty" resolves the pending "t" and still gets the instant "y" shortcut', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(getEditor())
+    await user.keyboard('ty')
+    expect(getEditor().value).toBe('ты')
+    await user.keyboard('a')
+    expect(getEditor().value).toBe('тя')
   })
 
   it('toggling Cyrillic|Roman keeps keyboard focus on the editor', async () => {
