@@ -1,0 +1,89 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+
+interface ToolbarProps {
+  onCopy: () => Promise<boolean>
+  onClear: () => void
+  onUndo: () => void
+  onRedo: () => void
+  onDownload: () => void
+  canUndo: boolean
+  canRedo: boolean
+  hasText: boolean
+}
+
+const BUTTON_CLASS =
+  'min-h-9 min-w-9 rounded-md border border-(--color-border) px-3 py-1.5 text-sm font-medium text-(--color-text) hover:bg-(--color-surface-muted) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-focus-ring) disabled:cursor-not-allowed disabled:opacity-40'
+
+const FEEDBACK_MS = 2000
+
+/**
+ * Toolbar actions (PROJECT.md §4.5). Copy/Clear/Undo/Redo/Download are
+ * wired by App to the editor/history modules; this component owns only
+ * the transient, non-modal "Copied"/"Copy failed" feedback.
+ */
+export function Toolbar({ onCopy, onClear, onUndo, onRedo, onDownload, canUndo, canRedo, hasText }: ToolbarProps) {
+  const [feedback, setFeedback] = useState<string | null>(null)
+  const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (feedbackTimerRef.current !== null) clearTimeout(feedbackTimerRef.current)
+    }
+  }, [])
+
+  const handleCopy = useCallback(() => {
+    void onCopy().then((ok) => {
+      setFeedback(ok ? 'Copied' : 'Copy failed')
+      if (feedbackTimerRef.current !== null) clearTimeout(feedbackTimerRef.current)
+      feedbackTimerRef.current = setTimeout(() => setFeedback(null), FEEDBACK_MS)
+    })
+  }, [onCopy])
+
+  return (
+    <div
+      role="toolbar"
+      aria-label="Editor actions"
+      className="flex flex-wrap items-center gap-2 border-b border-(--color-border) bg-(--color-surface) px-3 py-2 sm:px-4"
+    >
+      <button type="button" title="Copy" aria-label="Copy" onClick={handleCopy} className={BUTTON_CLASS}>
+        Copy
+      </button>
+      <button
+        type="button"
+        title="Clear"
+        aria-label="Clear"
+        onClick={onClear}
+        disabled={!hasText}
+        className={BUTTON_CLASS}
+      >
+        Clear
+      </button>
+      <button
+        type="button"
+        title="Undo"
+        aria-label="Undo"
+        onClick={onUndo}
+        disabled={!canUndo}
+        className={BUTTON_CLASS}
+      >
+        Undo
+      </button>
+      <button
+        type="button"
+        title="Redo"
+        aria-label="Redo"
+        onClick={onRedo}
+        disabled={!canRedo}
+        className={BUTTON_CLASS}
+      >
+        Redo
+      </button>
+      <button type="button" title="Download" aria-label="Download" onClick={onDownload} className={BUTTON_CLASS}>
+        Download
+      </button>
+      <span role="status" aria-live="polite" className="text-xs text-(--color-text-muted)">
+        {feedback}
+      </span>
+    </div>
+  )
+}

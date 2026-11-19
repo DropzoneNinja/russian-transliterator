@@ -1,0 +1,13 @@
+node_modules
+dist
+dist-ssr
+.git
+.github
+*.log
+.DS_Store
+.vscode
+.idea
+README.md
+PROJECT.md
+TASKS.md
+example-screenshot.png
