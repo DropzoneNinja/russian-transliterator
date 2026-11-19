@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useRef } from 'react'
-import { INITIAL_STATE, feed, flush, type EngineState } from '../transliteration/engine'
+import {
+  INITIAL_STATE,
+  feed,
+  flush,
+  isInstantShortcutBase,
+  tryExtendShortcut,
+  type EngineState,
+} from '../transliteration/engine'
 import type { TransliterationMode } from '../transliteration/transliterate'
 import type { EditSnapshot, HistoryGroup } from '../history/editorHistory'
 import {
@@ -15,26 +22,37 @@ import {
 export type { EditSnapshot, HistoryGroup }
 
 /**
- * A genuinely ambiguous pending sequence (e.g. "y", which could still
- * extend to "ya"/"yo"/"yu") legitimately has to wait for more input to
- * know what it resolves to. But if nothing else arrives — the user typed
- * it as the last character and stopped — it must not hang forever
- * (ISSUES.md: "Y does not work"). Auto-flush it after a short idle pause.
+ * A genuinely ambiguous pending sequence (e.g. "t", which could still
+ * extend to "tvz") legitimately has to wait for more input to know what
+ * it resolves to. But if nothing else arrives — the user typed it as the
+ * last character and stopped — it must not hang forever (ISSUES.md: "Y
+ * does not work"). Auto-flush it after a short idle pause.
  */
 const AUTO_FLUSH_IDLE_MS = 500
 
 /**
- * "y" alone is genuinely ambiguous with "ya"/"yo"/"yu" (я/ё/ю), but
- * waiting for a possible follow-up character made it feel laggy
- * (ISSUES.md follow-up). Instead, "y" commits to "ы" the instant it's
- * typed; if "u"/"o"/"a" follows within this window at the same spot, it
- * retroactively turns the "ы" into "ю"/"ё"/"я". A pause of 2s or more
- * before the follow-up character means it's treated as unrelated.
+ * Several single-character inputs are genuinely ambiguous with a longer
+ * sequence that resolves to a different letter — "y" vs "ya"/"yo"/"yu",
+ * "z" vs "zh", "j" vs "ja"/"jo"/"ju", "c" vs "ch", and "s" vs "sh"
+ * (itself ambiguous with "shh") — but waiting for a possible follow-up
+ * character made typing them feel laggy (ISSUES.md follow-up). Instead,
+ * each commits to its own letter the instant it's typed; if the right
+ * follow-up character follows within this window at the same spot, it's
+ * retroactively merged into the longer mapping — chaining again for
+ * "s" -> "sh" -> "shh". A pause of 2s or more before the follow-up
+ * character means it's treated as unrelated.
+ *
+ * This only kicks in where the ambiguity resolves one character at a
+ * time (`isInstantShortcutBase`/`tryExtendShortcut` in engine.ts) —
+ * "t" -> "tvz" and "m" -> "mjz" jump straight to a 3-character alternate
+ * spelling with no matching letter in between, so they still use the
+ * ordinary buffering + idle-auto-flush path above.
  */
-const Y_MERGE_WINDOW_MS = 2000
-const Y_MERGE_TARGETS: Record<string, string> = { u: 'ю', o: 'ё', a: 'я' }
+const SHORTCUT_MERGE_WINDOW_MS = 2000
 
-interface YShortcut {
+interface InstantShortcut {
+  /** Lowercase input accumulated via this shortcut so far, e.g. "s" then "sh". */
+  readonly raw: string
   readonly anchor: number
   readonly committedAt: number
   readonly isUpper: boolean
@@ -92,8 +110,8 @@ export function useTransliterationEditor(
   const isComposingRef = useRef(false)
   const compositionSnapshotRef = useRef<EditSnapshot | null>(null)
   const autoFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  /** A just-committed "y" -> "ы" eligible for retroactive merging into "ю"/"ё"/"я". */
-  const yShortcutRef = useRef<YShortcut | null>(null)
+  /** A just-committed instant shortcut (e.g. "y" -> "ы") eligible for retroactive merging into a longer mapping. */
+  const shortcutRef = useRef<InstantShortcut | null>(null)
 
   const commitMutation = useCallback((snapshot: EditSnapshot, group: HistoryGroup) => {
     lastKnownValueRef.current = snapshot.text
@@ -111,7 +129,7 @@ export function useTransliterationEditor(
   /** Resolve the pending buffer into the DOM, adjusting any out-of-region selection for the length change. */
   const flushPendingIntoDom = useCallback((): void => {
     clearAutoFlushTimer()
-    yShortcutRef.current = null
+    shortcutRef.current = null
     const ta = textareaRef.current
     const pendingRaw = engineRef.current.pendingRaw
     if (ta === null || pendingRaw === '') return
@@ -166,15 +184,22 @@ export function useTransliterationEditor(
       const ta = textareaRef.current
       if (ta === null || raw === '') return
 
-      // Retroactive y-merge: a lone "y" just committed to "ы" right here;
-      // "u"/"o"/"a" arriving now, at the same spot, within the window
-      // means the user meant "yu"/"yo"/"ya" all along.
-      const yShortcut = yShortcutRef.current
-      yShortcutRef.current = null
-      if (yShortcut !== null && start === end && start === yShortcut.anchor && raw.length === 1) {
-        const merge = Y_MERGE_TARGETS[raw.toLowerCase()]
-        if (merge !== undefined && Date.now() - yShortcut.committedAt < Y_MERGE_WINDOW_MS) {
-          const replacement = yShortcut.isUpper ? merge.toUpperCase() : merge
+      // Retroactive shortcut merge: an instant commit (e.g. "y" -> "ы",
+      // "s" -> "с") just happened right here; the right next character
+      // arriving now, at the same spot, within the window means the user
+      // meant the longer mapping all along (e.g. "ya", "sh").
+      const shortcut = shortcutRef.current
+      shortcutRef.current = null
+      if (
+        shortcut !== null &&
+        start === end &&
+        start === shortcut.anchor &&
+        raw.length === 1 &&
+        Date.now() - shortcut.committedAt < SHORTCUT_MERGE_WINDOW_MS
+      ) {
+        const extended = tryExtendShortcut(shortcut.raw, raw)
+        if (extended !== null) {
+          const replacement = shortcut.isUpper ? extended.cyrillic.toUpperCase() : extended.cyrillic
           const before = ta.value.slice(0, start - 1)
           const after = ta.value.slice(end)
           const newValue = before + replacement + after
@@ -182,6 +207,14 @@ export function useTransliterationEditor(
           ta.value = newValue
           ta.setSelectionRange(newCaret, newCaret)
           pendingAnchorRef.current = newCaret
+          if (extended.stillAmbiguous) {
+            shortcutRef.current = {
+              raw: shortcut.raw + raw.toLowerCase(),
+              anchor: newCaret,
+              committedAt: Date.now(),
+              isUpper: shortcut.isUpper,
+            }
+          }
           commitMutation({ text: newValue, selectionStart: newCaret, selectionEnd: newCaret }, 'insert')
           return
         }
@@ -209,12 +242,15 @@ export function useTransliterationEditor(
         }
       }
 
-      // Instant "y" shortcut: rather than leaving a lone "y" pending
-      // (ambiguous with ya/yo/yu), resolve it to "ы" immediately and
-      // remember the moment for a possible retroactive merge above.
-      let yShortcutIsUpper: boolean | null = null
-      if (modeRef.current === 'on' && (state.pendingRaw === 'y' || state.pendingRaw === 'Y')) {
-        yShortcutIsUpper = state.pendingRaw === 'Y'
+      // Instant shortcut: rather than leaving a one-character-away
+      // ambiguity (e.g. "y" vs ya/yo/yu, "s" vs sh) pending, resolve it
+      // to its own letter immediately and remember the moment for a
+      // possible retroactive merge above.
+      let instantShortcutRaw: string | null = null
+      let instantShortcutIsUpper = false
+      if (modeRef.current === 'on' && isInstantShortcutBase(state.pendingRaw)) {
+        instantShortcutRaw = state.pendingRaw.toLowerCase()
+        instantShortcutIsUpper = state.pendingRaw !== instantShortcutRaw
         committedText += flush(state).committed
         state = INITIAL_STATE
       }
@@ -230,8 +266,13 @@ export function useTransliterationEditor(
       engineRef.current = state
       pendingAnchorRef.current = newCaret
 
-      if (yShortcutIsUpper !== null) {
-        yShortcutRef.current = { anchor: newCaret, committedAt: Date.now(), isUpper: yShortcutIsUpper }
+      if (instantShortcutRaw !== null) {
+        shortcutRef.current = {
+          raw: instantShortcutRaw,
+          anchor: newCaret,
+          committedAt: Date.now(),
+          isUpper: instantShortcutIsUpper,
+        }
       }
 
       commitMutation({ text: newValue, selectionStart: newCaret, selectionEnd: newCaret }, group)
@@ -245,7 +286,7 @@ export function useTransliterationEditor(
       const ta = textareaRef.current
       if (ta === null) return
 
-      yShortcutRef.current = null
+      shortcutRef.current = null
       const pendingRaw = engineRef.current.pendingRaw
       const anchor = pendingAnchorRef.current
 
@@ -331,7 +372,7 @@ export function useTransliterationEditor(
       const ta = textareaRef.current
       if (ta === null) return
       clearAutoFlushTimer()
-      yShortcutRef.current = null
+      shortcutRef.current = null
       ta.value = snapshot.text
       ta.setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd)
       ta.focus()
@@ -433,7 +474,7 @@ export function useTransliterationEditor(
       engineRef.current = INITIAL_STATE
       pendingAnchorRef.current = newCaret
       clearAutoFlushTimer()
-      yShortcutRef.current = null
+      shortcutRef.current = null
 
       commitMutation({ text: newValue, selectionStart: newCaret, selectionEnd: newCaret }, 'other')
     }
@@ -463,7 +504,7 @@ export function useTransliterationEditor(
       engineRef.current = INITIAL_STATE
       pendingAnchorRef.current = newCaret
       clearAutoFlushTimer()
-      yShortcutRef.current = null
+      shortcutRef.current = null
 
       commitMutation({ text: newValue, selectionStart: newCaret, selectionEnd: newCaret }, 'other')
     }

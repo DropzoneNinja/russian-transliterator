@@ -55,6 +55,43 @@ function allLongerExtensionsMatch(candidateLower: string, ownResult: string): bo
 }
 
 /**
+ * True if `raw` (already resolved to its own exact match) has at least
+ * one mapping key exactly one character longer that starts with it —
+ * i.e. the ambiguity it's part of resolves with just one more
+ * keystroke, so `useTransliterationEditor`'s instant-commit-then-merge
+ * shortcut (see its own comment) can safely show `raw`'s own result
+ * right away and fix it up later if that one extra character arrives.
+ * "t"->"tvz" and "m"->"mjz" fail this (no 1-longer key exists; the only
+ * extension jumps straight to 3 characters), so they're left to the
+ * ordinary buffering path instead.
+ */
+export function isInstantShortcutBase(raw: string): boolean {
+  const lower = raw.toLowerCase()
+  if (!EXACT_MATCH.has(lower)) return false
+  return ALL_KEYS.some((key) => key.length === lower.length + 1 && key.startsWith(lower))
+}
+
+/**
+ * Given an instant shortcut's accumulated raw input and the next
+ * character typed right after it, checks whether together they continue
+ * a genuine mapping (e.g. "s" + "h" -> "sh", or "sh" + "h" -> "shh").
+ * Returns the resulting Cyrillic letter and whether that result is
+ * itself still a one-keystroke-away ambiguity (so the shortcut should
+ * stay open for one more character), or `null` if `char` doesn't extend
+ * `raw` into anything — the caller should then treat `char` as an
+ * unrelated, independent keystroke.
+ */
+export function tryExtendShortcut(
+  raw: string,
+  char: string,
+): { readonly cyrillic: string; readonly stillAmbiguous: boolean } | null {
+  const candidateLower = (raw + char).toLowerCase()
+  const exact = EXACT_MATCH.get(candidateLower)
+  if (exact === undefined) return null
+  return { cyrillic: exact, stillAmbiguous: isInstantShortcutBase(candidateLower) }
+}
+
+/**
  * Case rule (PROJECT.md §5.3, resolved in TASKS.md §1.3 point 5): the
  * output is uppercase exactly when the first character of the matched
  * input sequence is uppercase. A single rule covers both "Zh" -> "Ж"

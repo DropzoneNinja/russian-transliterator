@@ -38,14 +38,14 @@ describe('App: live typing', () => {
     expect(getEditor().value).toBe('мир')
   })
 
-  it('keeps an ambiguous sequence literal until it resolves (longest match)', async () => {
+  it('instantly commits a one-hop-ambiguous sequence, chaining through to the longest match', async () => {
     const user = userEvent.setup()
     render(<App />)
     await user.click(getEditor())
     await user.keyboard('s')
-    expect(getEditor().value).toBe('s')
+    expect(getEditor().value).toBe('с')
     await user.keyboard('h')
-    expect(getEditor().value).toBe('sh')
+    expect(getEditor().value).toBe('ш')
     await user.keyboard('h')
     expect(getEditor().value).toBe('щ')
   })
@@ -98,10 +98,10 @@ describe('App: backspace', () => {
     const user = userEvent.setup()
     render(<App />)
     await user.click(getEditor())
-    await user.keyboard('sh')
-    expect(getEditor().value).toBe('sh')
+    await user.keyboard('tv') // "t" alone can't instant-commit (ambiguous only with the 3-char "tvz"), so both stay literally pending
+    expect(getEditor().value).toBe('tv')
     await user.keyboard('{Backspace}')
-    expect(getEditor().value).toBe('s')
+    expect(getEditor().value).toBe('t')
     await user.keyboard('{Backspace}')
     expect(getEditor().value).toBe('')
   })
@@ -421,6 +421,77 @@ describe('App: ISSUES.md fixes', () => {
     expect(getEditor().value).toBe('ты')
     await user.keyboard('a')
     expect(getEditor().value).toBe('тя')
+  })
+
+  it('a lone "z"/"j"/"c" resolves to its own letter instantly, with nothing further typed', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(getEditor())
+    await user.keyboard('z')
+    expect(getEditor().value).toBe('з')
+    await user.keyboard(' j')
+    expect(getEditor().value).toBe('з й')
+    await user.keyboard(' c')
+    expect(getEditor().value).toBe('з й ц')
+  })
+
+  it('"h" right after a "z"/"c" shortcut retroactively merges into "ж"/"ч"', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(getEditor())
+    await user.keyboard('z')
+    expect(getEditor().value).toBe('з')
+    await user.keyboard('h')
+    expect(getEditor().value).toBe('ж')
+
+    await user.keyboard(' c')
+    expect(getEditor().value).toBe('ж ц')
+    await user.keyboard('h')
+    expect(getEditor().value).toBe('ж ч')
+  })
+
+  it('"a"/"o"/"u" right after a "j" shortcut retroactively merges into "я"/"ё"/"ю"', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(getEditor())
+    await user.keyboard('j')
+    expect(getEditor().value).toBe('й')
+    await user.keyboard('o')
+    expect(getEditor().value).toBe('ё')
+  })
+
+  it('"h" right after an "s" shortcut merges to "ш", chaining again into "щ" on a second "h"', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(getEditor())
+    await user.keyboard('s')
+    expect(getEditor().value).toBe('с')
+    await user.keyboard('h')
+    expect(getEditor().value).toBe('ш')
+    await user.keyboard('h')
+    expect(getEditor().value).toBe('щ')
+  })
+
+  it('an unrelated character right after a "z" shortcut is treated as a separate character', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(getEditor())
+    await user.keyboard('z')
+    expect(getEditor().value).toBe('з')
+    await user.keyboard('k')
+    expect(getEditor().value).toBe('зк')
+  })
+
+  it('"h" arriving 2+ seconds after a "z" shortcut is treated as a separate character', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(getEditor())
+    await user.keyboard('z')
+    expect(getEditor().value).toBe('з')
+
+    await new Promise((resolve) => setTimeout(resolve, 2100))
+    await user.keyboard('h')
+    expect(getEditor().value).toBe('зх')
   })
 
   it('toggling Cyrillic|Roman keeps keyboard focus on the editor', async () => {
