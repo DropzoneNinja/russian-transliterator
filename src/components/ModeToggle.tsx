@@ -10,8 +10,8 @@ interface ModeToggleProps {
  * the hood). State is lifted to App so it can drive the editor engine, be
  * saved locally, and be toggled from the Escape shortcut too. The active
  * side is conveyed through weight/colour together, never colour alone
- * (§8.2). Labelled with the actual Russian names for the two scripts
- * (ISSUES.md) rather than their English names.
+ * (§8.2). The Cyrillic side is labelled with its actual Russian name
+ * (ISSUES.md); Roman stays in English per the user's preference.
  */
 export function ModeToggle({ mode, onToggle }: ModeToggleProps) {
   const isCyrillic = mode === 'on'
@@ -33,7 +33,7 @@ export function ModeToggle({ mode, onToggle }: ModeToggleProps) {
         |
       </span>
       <span className={isCyrillic ? 'font-normal text-(--color-text-muted)' : 'font-semibold text-(--color-text)'}>
-        Латиница
+        Roman
       </span>
     </button>
   )

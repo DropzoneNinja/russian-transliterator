@@ -359,9 +359,9 @@ describe('App: ISSUES.md fixes', () => {
     expect(getEditor()).toHaveFocus()
   })
 
-  it('labels the toggle with the Russian names for the two scripts', () => {
+  it('labels the toggle with the Russian name for Cyrillic, keeping Roman in English', () => {
     render(<App />)
     expect(screen.getByText('Кириллица')).toBeInTheDocument()
-    expect(screen.getByText('Латиница')).toBeInTheDocument()
+    expect(screen.getByText('Roman')).toBeInTheDocument()
   })
 })
