@@ -6,36 +6,34 @@ interface ModeToggleProps {
 }
 
 /**
- * ON/OFF transliteration control (PROJECT.md §4.3). State is lifted to
- * App so it can drive the editor engine, be saved locally, and be
- * toggled from the Escape shortcut too. Mode is conveyed through text as
- * well as colour, never colour alone (§8.2).
+ * Cyrillic/Roman output toggle (PROJECT.md §4.3 — "Translit ON/OFF" under
+ * the hood). State is lifted to App so it can drive the editor engine, be
+ * saved locally, and be toggled from the Escape shortcut too. The active
+ * side is conveyed through weight/colour together, never colour alone
+ * (§8.2).
  */
 export function ModeToggle({ mode, onToggle }: ModeToggleProps) {
-  const isOn = mode === 'on'
+  const isCyrillic = mode === 'on'
 
   return (
     <button
       type="button"
       role="switch"
-      aria-checked={isOn}
+      aria-checked={isCyrillic}
+      aria-label="Toggle output script"
       title="Toggle transliteration (Esc)"
       onClick={onToggle}
-      className="inline-flex shrink-0 items-center gap-2 rounded-full border border-(--color-border-strong) bg-(--color-surface-muted) py-1.5 pr-3 pl-1.5 text-xs font-medium text-(--color-text) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-focus-ring) sm:text-sm"
+      className="min-h-9 min-w-9 rounded-md border border-(--color-border) px-3 py-1.5 text-sm font-medium hover:bg-(--color-surface-muted) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-focus-ring)"
     >
-      <span
-        aria-hidden="true"
-        className={`flex h-5 w-9 items-center rounded-full p-0.5 transition-colors ${
-          isOn ? 'bg-(--color-accent)' : 'bg-(--color-border-strong)'
-        }`}
-      >
-        <span
-          className={`h-4 w-4 rounded-full bg-(--color-surface) transition-transform ${
-            isOn ? 'translate-x-4' : 'translate-x-0'
-          }`}
-        />
+      <span className={isCyrillic ? 'font-semibold text-(--color-text)' : 'font-normal text-(--color-text-muted)'}>
+        Cyrillic
       </span>
-      Translit {isOn ? 'ON' : 'OFF'}
+      <span aria-hidden="true" className="px-1 text-(--color-text-muted)">
+        |
+      </span>
+      <span className={isCyrillic ? 'font-normal text-(--color-text-muted)' : 'font-semibold text-(--color-text)'}>
+        Roman
+      </span>
     </button>
   )
 }

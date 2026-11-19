@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { ModeToggle } from './ModeToggle'
+import type { TransliterationMode } from '../transliteration/transliterate'
 
 interface ToolbarProps {
+  mode: TransliterationMode
+  onToggleMode: () => void
   onCopy: () => Promise<boolean>
   onClear: () => void
   onUndo: () => void
@@ -21,7 +25,18 @@ const FEEDBACK_MS = 2000
  * wired by App to the editor/history modules; this component owns only
  * the transient, non-modal "Copied"/"Copy failed" feedback.
  */
-export function Toolbar({ onCopy, onClear, onUndo, onRedo, onDownload, canUndo, canRedo, hasText }: ToolbarProps) {
+export function Toolbar({
+  mode,
+  onToggleMode,
+  onCopy,
+  onClear,
+  onUndo,
+  onRedo,
+  onDownload,
+  canUndo,
+  canRedo,
+  hasText,
+}: ToolbarProps) {
   const [feedback, setFeedback] = useState<string | null>(null)
   const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -78,6 +93,7 @@ export function Toolbar({ onCopy, onClear, onUndo, onRedo, onDownload, canUndo, 
       >
         Redo
       </button>
+      <ModeToggle mode={mode} onToggle={onToggleMode} />
       <button type="button" title="Download" aria-label="Download" onClick={onDownload} className={BUTTON_CLASS}>
         Download
       </button>

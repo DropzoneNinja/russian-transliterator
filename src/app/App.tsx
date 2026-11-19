@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AppHeader } from '../components/AppHeader'
-import { ModeToggle } from '../components/ModeToggle'
 import { TransliterationReference } from '../components/TransliterationReference'
 import { Toolbar } from '../components/Toolbar'
 import { Editor } from '../components/Editor'
@@ -94,11 +93,11 @@ export function App() {
 
   return (
     <div className="flex h-dvh min-h-0 flex-col bg-(--color-bg)">
-      <AppHeader>
-        <ModeToggle mode={mode} onToggle={handleToggleMode} />
-      </AppHeader>
+      <AppHeader />
       <TransliterationReference />
       <Toolbar
+        mode={mode}
+        onToggleMode={handleToggleMode}
         onCopy={handleCopy}
         onClear={handleClear}
         onUndo={handleUndo}
