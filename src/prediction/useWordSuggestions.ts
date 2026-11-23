@@ -27,7 +27,7 @@ export interface UseWordSuggestionsOptions {
    * textarea at recompute time.
    */
   readonly text: string
-  /** Called with the snapshot to apply when a suggestion is accepted (via click, Tab, or Space). */
+  /** Called with the snapshot to apply when a suggestion is accepted (via click or Tab). */
   readonly onAccept: (snapshot: EditSnapshot) => void
 }
 
@@ -57,7 +57,6 @@ export function useWordSuggestions(options: UseWordSuggestionsOptions): WordSugg
   const onAcceptRef = useRef(options.onAccept)
   const rangeRef = useRef<WordRange | null>(null)
   const suggestionsRef = useRef<readonly string[]>([])
-  const ghostSuffixRef = useRef('')
   const [suggestions, setSuggestions] = useState<readonly string[]>([])
   const [ghostSuffix, setGhostSuffix] = useState('')
 
@@ -69,7 +68,6 @@ export function useWordSuggestions(options: UseWordSuggestionsOptions): WordSugg
   const applyResult = useCallback((next: readonly string[], range: WordRange | null, ghost: string) => {
     rangeRef.current = range
     suggestionsRef.current = next
-    ghostSuffixRef.current = ghost
     setSuggestions(next)
     setGhostSuffix(ghost)
   }, [])
@@ -140,14 +138,6 @@ export function useWordSuggestions(options: UseWordSuggestionsOptions): WordSugg
       if (top === undefined) return
 
       if (event.key === 'Tab' && !event.shiftKey) {
-        event.preventDefault()
-        accept(top)
-        return
-      }
-
-      // Space accepts the completion currently shown as ghost text — if
-      // nothing is showing, a space is just a space.
-      if (event.key === ' ' && ghostSuffixRef.current !== '') {
         event.preventDefault()
         accept(top)
       }

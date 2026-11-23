@@ -285,6 +285,7 @@ complete. Not covered by PROJECT.md; tracked here for consistency.
 - [x] **P12-5** Tests: ghost text appears/updates/disappears correctly, Space-accept vs. plain space, chips render inside the toolbar region, instant-y / retroactive-merge / 2s-expiry / post-flush cases.
 - [x] **P12-6** Generalized the instant-commit-then-merge trick from P12-4 beyond "y": `engine.ts` now exports `isInstantShortcutBase`/`tryExtendShortcut`, derived from the mapping table rather than hand-listing letters, so any single-character input that's ambiguous with a mapping exactly one character longer (not just "y" — also "z"→"zh", "j"→"ja"/"jo"/"ju", "c"→"ch", "s"→"sh") commits instantly and merges retroactively. Chains for multiple hops ("s"→"sh"→"shh"). "t"→"tvz" and "m"→"mjz" jump straight to a 3-character alternate spelling with no 1-longer mapping in between, so they're excluded and keep using the ordinary buffer + idle-auto-flush path.
 - [x] **P12-7** Tests: lone "z"/"j"/"c" instant commit, "zh"/"jo"/"ch" retroactive merge, "s"→"sh"→"shh" chained merge, unrelated-character and 2s-expiry fall-through, rewrote the two tests that asserted the old literal-buffering behavior for "s"/"sh".
+- [x] **P12-8** Reverted P12-3: Space no longer accepts the ghost-text completion (user feedback — it was firing when they just meant to type a literal space). Tab is now the only key that accepts a suggestion; Space always inserts a space.
 
 ---
 

@@ -347,14 +347,14 @@ describe('App: word suggestions', () => {
     expect(getGhostSuffix()).toBe('')
   })
 
-  it('pressing Space accepts the ghost completion', async () => {
+  it('pressing Space does not accept the ghost completion — only Tab does', async () => {
     const user = userEvent.setup()
     render(<App />)
     await user.click(getEditor())
     await user.keyboard('priv')
     expect(getGhostSuffix()).toBe('ет')
     await user.keyboard(' ')
-    expect(getEditor().value).toBe('привет ')
+    expect(getEditor().value).toBe('прив ')
   })
 
   it('Space is a normal space when no ghost text is showing', async () => {
