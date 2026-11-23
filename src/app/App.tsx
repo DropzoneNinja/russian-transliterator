@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { AppHeader } from '../components/AppHeader'
 import { TransliterationReference } from '../components/TransliterationReference'
 import { Toolbar } from '../components/Toolbar'
@@ -11,6 +11,7 @@ import { useWordSuggestions } from '../prediction/useWordSuggestions'
 import { copyToClipboard } from '../utils/clipboard'
 import { downloadTextFile } from '../utils/download'
 import type { TransliterationMode } from '../transliteration/transliterate'
+import { INITIAL_STATE, feed, flush } from '../transliteration/engine'
 
 export function App() {
   const persistence = useLocalPersistence()
@@ -102,6 +103,65 @@ export function App() {
     [editor, history],
   )
 
+  const handleTranslitSelection = useCallback(() => {
+    editor.flushPending() // resolve any pending sequence first — a non-collapsed selection should already imply this, but be defensive
+    const ta = editor.textareaRef.current
+    if (ta === null) return
+    const start = ta.selectionStart
+    const end = ta.selectionEnd
+    if (start === end) return
+
+    const selected = ta.value.slice(start, end)
+    const fed = feed(INITIAL_STATE, selected)
+    const converted = fed.committed + flush(fed.state).committed
+
+    const newText = ta.value.slice(0, start) + converted + ta.value.slice(end)
+    const newCaret = start + converted.length
+    const snapshot: EditSnapshot = { text: newText, selectionStart: newCaret, selectionEnd: newCaret }
+    history.push(snapshot, 'other')
+    editor.applyExternalChange(snapshot)
+  }, [editor, history])
+
+  // Tracks whether the editor currently has a non-collapsed selection, to
+  // enable/disable the "Translit Selection" button — an external-store
+  // subscription (rather than an effect calling setState) since the DOM's
+  // selection is exactly the kind of outside-React state `useSyncExternalStore`
+  // is for. `getSelectionSnapshot` also re-runs on every render (including
+  // ones triggered by `text` changing, since every edit collapses the
+  // selection), so it stays correct after our own programmatic edits without
+  // needing its own event. `selectionchange` isn't fired reliably for form
+  // controls in every browser, so `mouseup`/`keyup` on the textarea back it up.
+  const { textareaRef } = editor
+
+  const subscribeToSelection = useCallback(
+    (onStoreChange: () => void) => {
+      const ta = textareaRef.current
+      if (ta === null) return () => {}
+
+      function handleSelectionChange(): void {
+        if (document.activeElement !== ta) return
+        onStoreChange()
+      }
+
+      document.addEventListener('selectionchange', handleSelectionChange)
+      ta.addEventListener('mouseup', onStoreChange)
+      ta.addEventListener('keyup', onStoreChange)
+      return () => {
+        document.removeEventListener('selectionchange', handleSelectionChange)
+        ta.removeEventListener('mouseup', onStoreChange)
+        ta.removeEventListener('keyup', onStoreChange)
+      }
+    },
+    [textareaRef],
+  )
+
+  const getSelectionSnapshot = useCallback(() => {
+    const ta = textareaRef.current
+    return ta !== null && ta.selectionStart !== ta.selectionEnd
+  }, [textareaRef])
+
+  const hasSelection = useSyncExternalStore(subscribeToSelection, getSelectionSnapshot)
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
       if (event.isComposing) return
@@ -146,6 +206,8 @@ export function App() {
         canUndo={history.canUndo}
         canRedo={history.canRedo}
         hasText={text !== ''}
+        onTranslitSelection={handleTranslitSelection}
+        canTranslitSelection={hasSelection}
         suggestions={suggestions.suggestions}
         onSelectSuggestion={suggestions.accept}
       />

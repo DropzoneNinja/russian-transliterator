@@ -281,6 +281,39 @@ export function useTransliterationEditor(
     [commitMutation, ensurePendingConsistency, scheduleAutoFlush],
   )
 
+  /**
+   * Inserts text exactly as given, bypassing the transliteration engine
+   * entirely — used for paste and drag-and-drop, which should never
+   * transform text: Cyrillic pasted in stays Cyrillic, Latin pasted in
+   * stays Latin. Still flushes any in-flight pending sequence first,
+   * since arriving text is itself a flush trigger (same as encountering
+   * existing Cyrillic while typing).
+   */
+  const performLiteralInsert = useCallback(
+    (raw: string, group: HistoryGroup): void => {
+      if (raw === '') return
+      flushPendingIntoDom()
+      shortcutRef.current = null
+
+      const ta = textareaRef.current
+      if (ta === null) return
+
+      const curStart = ta.selectionStart
+      const curEnd = ta.selectionEnd
+      const before = ta.value.slice(0, curStart)
+      const after = ta.value.slice(curEnd)
+      const newValue = before + raw + after
+      const newCaret = before.length + raw.length
+
+      ta.value = newValue
+      ta.setSelectionRange(newCaret, newCaret)
+      pendingAnchorRef.current = newCaret
+
+      commitMutation({ text: newValue, selectionStart: newCaret, selectionEnd: newCaret }, group)
+    },
+    [commitMutation, flushPendingIntoDom],
+  )
+
   const performDelete = useCallback(
     (inputType: string, start: number, end: number): void => {
       const ta = textareaRef.current
@@ -427,7 +460,9 @@ export function useTransliterationEditor(
       }
 
       if (event.inputType === 'insertFromDrop') {
-        performInsert(start, end, event.data ?? '', 'other', true)
+        // Dropped text is inserted literally, never transliterated — same
+        // as paste: whatever script/case it arrives in is what should land.
+        performLiteralInsert(event.data ?? '', 'other')
         return
       }
 
@@ -435,7 +470,7 @@ export function useTransliterationEditor(
         // Primary handling is the native `paste` listener below; this is a
         // defensive fallback in case that listener didn't already consume it.
         const data = event.data
-        if (data !== null && data !== '') performInsert(start, end, data, 'other', true)
+        if (data !== null && data !== '') performLiteralInsert(data, 'other')
       }
     }
 
@@ -513,7 +548,9 @@ export function useTransliterationEditor(
       const text = event.clipboardData?.getData('text/plain') ?? ''
       event.preventDefault()
       if (text === '') return
-      performInsert(ta!.selectionStart, ta!.selectionEnd, text, 'other', true)
+      // Pasted text is inserted literally, never transliterated — Cyrillic
+      // pasted in stays Cyrillic, Latin pasted in stays Latin.
+      performLiteralInsert(text, 'other')
     }
 
     function handleBlur(): void {
@@ -550,6 +587,7 @@ export function useTransliterationEditor(
     flushPendingIntoDom,
     performDelete,
     performInsert,
+    performLiteralInsert,
   ])
 
   return { textareaRef, applyExternalChange, flushPending }

@@ -529,3 +529,113 @@ describe('App: ISSUES.md fixes', () => {
     expect(screen.getByText('Roman')).toBeInTheDocument()
   })
 })
+
+describe('App: paste and drop are never transliterated', () => {
+  it('pasting Latin text inserts it literally, even in Cyrillic mode', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(getEditor())
+    await user.paste('privet')
+    expect(getEditor().value).toBe('privet')
+  })
+
+  it('pasting Cyrillic text leaves it untouched', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(getEditor())
+    await user.paste('привет')
+    expect(getEditor().value).toBe('привет')
+  })
+
+  it('pasting flushes an in-flight pending sequence first, then inserts literally', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(getEditor())
+    await user.keyboard('t') // "t" is pending, ambiguous with "tvz"
+    expect(getEditor().value).toBe('t')
+    await user.paste('mir')
+    expect(getEditor().value).toBe('тmir')
+  })
+
+  it('pasting replaces a selection literally', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    const editor = getEditor()
+    await user.click(editor)
+    await user.keyboard('privet mir')
+    expect(editor.value).toBe('привет мир')
+
+    const start = editor.value.indexOf('мир')
+    editor.setSelectionRange(start, start + 'мир'.length)
+    await user.paste('dub')
+    expect(editor.value).toBe('привет dub')
+  })
+
+  it('pasting is still literal when the Cyrillic|Roman toggle is off', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(getEditor())
+    await user.click(screen.getByRole('switch'))
+    await user.paste('privet')
+    expect(getEditor().value).toBe('privet')
+  })
+
+  it('dropped text is inserted literally, not transliterated', () => {
+    render(<App />)
+    const editor = getEditor()
+    editor.focus()
+    const event = new InputEvent('beforeinput', {
+      inputType: 'insertFromDrop',
+      data: 'privet',
+      bubbles: true,
+      cancelable: true,
+    })
+    fireEvent(editor, event)
+    expect(editor.value).toBe('privet')
+  })
+})
+
+describe('App: manual Translit Selection button', () => {
+  function getTranslitButton(): HTMLButtonElement {
+    return screen.getByRole('button', { name: 'Translit Selection' }) as HTMLButtonElement
+  }
+
+  it('is disabled when nothing is selected', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(getEditor())
+    await user.keyboard('privet')
+    expect(getTranslitButton()).toBeDisabled()
+  })
+
+  it('converts a highlighted Latin selection to Cyrillic when clicked', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    const editor = getEditor()
+    await user.click(editor)
+    await user.paste('privet mir') // pasted literally (feature above), so it's still Latin to select
+    expect(editor.value).toBe('privet mir')
+
+    editor.setSelectionRange(0, 'privet'.length)
+    fireEvent(document, new Event('selectionchange'))
+    expect(getTranslitButton()).toBeEnabled()
+
+    await user.click(getTranslitButton())
+    expect(editor.value).toBe('привет mir')
+  })
+
+  it('works even when the Cyrillic|Roman toggle is off', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    const editor = getEditor()
+    await user.click(editor)
+    await user.click(screen.getByRole('switch')) // toggle to Roman/off
+    await user.keyboard('privet')
+    expect(editor.value).toBe('privet')
+
+    editor.setSelectionRange(0, editor.value.length)
+    fireEvent(document, new Event('selectionchange'))
+    await user.click(getTranslitButton())
+    expect(editor.value).toBe('привет')
+  })
+})

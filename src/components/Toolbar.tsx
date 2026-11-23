@@ -16,6 +16,8 @@ interface ToolbarProps {
   canUndo: boolean
   canRedo: boolean
   hasText: boolean
+  onTranslitSelection: () => void
+  canTranslitSelection: boolean
   suggestions: readonly string[]
   onSelectSuggestion: (word: string) => void
 }
@@ -43,6 +45,8 @@ export function Toolbar({
   canUndo,
   canRedo,
   hasText,
+  onTranslitSelection,
+  canTranslitSelection,
   suggestions,
   onSelectSuggestion,
 }: ToolbarProps) {
@@ -101,6 +105,16 @@ export function Toolbar({
         className={BUTTON_CLASS}
       >
         Redo
+      </button>
+      <button
+        type="button"
+        title="Translit Selection"
+        aria-label="Translit Selection"
+        onClick={onTranslitSelection}
+        disabled={!canTranslitSelection}
+        className={BUTTON_CLASS}
+      >
+        Translit
       </button>
       <ModeToggle mode={mode} onToggle={onToggleMode} />
       <PredictionToggle enabled={predictionEnabled} onToggle={onTogglePrediction} />
